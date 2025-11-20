@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1024, initial-scale=0.5, maximum-scale=5.0, user-scalable=yes">
+    <title>Document Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            min-width: 1024px;
+            width: 100%;
+        }
+
+        body {
+            font-family: 'Times New Roman', Times, serif;
+            background: #fff;
+            overflow: hidden;
+            position: relative;
+            height: 100vh;
+            min-width: 1024px;
+            width: 100vw;
+        }
+
+        /* Grid container */
+        .grid-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: auto;
+            display: grid;
+            gap: 0;
+            z-index: 10; /* Grid on top */
+            pointer-events: none; /* Allow clicks to pass through */
+        }
+
+        .grid-cell {
+            border-right: 1px solid rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.3);
+            position: relative;
+            background: transparent; /* Fully transparent */
+        }
+
+        /* Add pseudo-element for backdrop-filter */
+        .grid-cell::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: transparent;
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            z-index: -1; /* Place behind cell content */
+            pointer-events: none;
+        }
+
+        .grid-cell.top-row {
+            border-top: 1px solid rgba(0, 0, 0, 0.3);
+        }
+
+        .grid-cell.first-col {
+            border-left: 1px solid rgba(0, 0, 0, 0.3);
+        }
+
+        /* Interactive cells */
+        .interactive-cell {
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            text-decoration: none;
+            color: #000;
+            font-size: 11px;
+            letter-spacing: 0.3px;
+            text-align: center;
+            line-height: 1.4;
+            position: relative;
+            z-index: 1;
+            word-break: break-word;
+            hyphens: auto;
+            pointer-events: all;
+        }
+
+        .interactive-cell span {
+            transform: scaleY(1.5);
+            display: inline-block;
+        }
+
+        .interactive-cell:hover {
+            background: #000;
+            color: #fff;
+        }
+
+        .smiley {
+            font-size: 14px;
+            user-select: none;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            background: transparent;
+            z-index: 1;
+            pointer-events: all;
+        }
+
+        .smiley:hover {
+            background: #000;
+            color: #fff;
+        }
+
+        .smiley-text::before {
+            content: '✧‿✧';
+        }
+
+        .smiley:hover .smiley-text::before {
+            content: '♥‿♥';
+        }
+
+        /* Document viewer */
+        .viewer-container {
+            position: fixed;
+            top: 0; /* Start from top */
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1; /* Below the grid */
+            background: #fff;
+            border: none;
+        }
+
+        .document-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #fff;
+        }
+
+        .loader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            border: 1px solid #000;
+            animation: rotate 2s linear infinite;
+            z-index: 6;
+        }
+
+        @keyframes rotate {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Document viewer -->
+    <div class="viewer-container" id="viewerContainer">
+        <div class="loader" id="loader"></div>
+        <iframe 
+            class="document-frame"
+            id="documentFrame"
+            onload="hideLoader()"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+        ></iframe>
+    </div>
+
+    <!-- Grid container -->
+    <div class="grid-container" id="gridContainer"></div>
+
+    <script>
+        // Detect if user is on mobile device
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+                || (window.innerWidth <= 768 && 'ontouchstart' in window);
+        }
+
+        // Set iframe source based on device type
+        function setDocumentSource() {
+            const iframe = document.getElementById('documentFrame');
+            
+            if (isMobileDevice()) {
+                // Mobile: Show PDF
+                iframe.src = 'https://drive.google.com/file/d/14EwLGH0G09PX6nzUhxWQR0JFDkXq89-5/preview';
+            } else {
+                // Desktop: Show editable Google Docs
+                iframe.src = 'https://docs.google.com/document/d/1pLNnLdR0WxFwvbl3Y9Vm7m-S1w2QyM45nKWv51sDaE8/edit?usp=sharing&embedded=true&rm=minimal&ui=desktop';
+            }
+        }
+
+        function createGrid() {
+            const container = document.getElementById('gridContainer');
+            const viewer = document.getElementById('viewerContainer');
+            container.innerHTML = '';
+            
+            // Always use desktop cell size
+            const baseCellSize = 92;
+            const viewportWidth = Math.max(window.innerWidth, 1024);
+            
+            // Calculate cell size to fit perfectly without partial squares
+            const cols = Math.floor(viewportWidth / baseCellSize);
+            const cellWidth = viewportWidth / cols;
+            const cellHeight = baseCellSize;
+            
+            container.style.gridTemplateColumns = `repeat(${cols}, ${cellWidth}px)`;
+            container.style.gridTemplateRows = `${cellHeight}px`;
+            
+            // IMPORTANT: The iframe now covers the entire viewport (top: 0)
+            // The grid sits on top and blurs the top portion of the iframe
+            viewer.style.top = '0';
+            viewer.style.left = '0';
+            viewer.style.right = '0';
+            viewer.style.bottom = '0';
+            
+            for (let col = 0; col < cols; col++) {
+                const cell = document.createElement('div');
+                cell.className = 'grid-cell top-row';
+                
+                if (col === 0) {
+                    cell.classList.add('first-col');
+                }
+                
+                // Top-left cell - smiley
+                if (col === 0) {
+                    const smiley = document.createElement('div');
+                    smiley.className = 'smiley';
+                    const smileyText = document.createElement('span');
+                    smileyText.className = 'smiley-text';
+                    smiley.appendChild(smileyText);
+                    cell.appendChild(smiley);
+                }
+                // Second to last cell - email
+                else if (col === cols - 2) {
+                    const link = document.createElement('a');
+                    link.href = 'mailto:adrianganeaxyz@gmail.com';
+                    link.className = 'interactive-cell';
+                    const span = document.createElement('span');
+                    span.textContent = 'email';
+                    link.appendChild(span);
+                    cell.appendChild(link);
+                }
+                // Last cell - instagram
+                else if (col === cols - 1) {
+                    const link = document.createElement('a');
+                    link.href = 'https://www.instagram.com/adrnggg/';
+                    link.target = '_blank';
+                    link.className = 'interactive-cell';
+                    const span = document.createElement('span');
+                    span.textContent = 'instagram';
+                    link.appendChild(span);
+                    cell.appendChild(link);
+                }
+                
+                container.appendChild(cell);
+            }
+        }
+
+        function hideLoader() {
+            const loader = document.getElementById('loader');
+            setTimeout(() => {
+                loader.style.display = 'none';
+            }, 500);
+        }
+
+        // Initialize
+        setDocumentSource();
+        createGrid();
+
+        // Recreate grid on resize
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                createGrid();
+                setDocumentSource();
+            }, 250);
+        });
+
+        // Hide loader after timeout if iframe doesn't load
+        setTimeout(() => {
+            hideLoader();
+        }, 5000);
+    </script>
+</body>
+</html>
